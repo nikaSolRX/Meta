@@ -1,10 +1,10 @@
-
 function SCP(C, A)
     S = []
     LengthC = length(C)
     U = zeros(Float64, LengthC)
     Ia = zeros(Int, LengthC)
     xlist = zeros(Int, LengthC)
+    z = 0
     for i in 1:length(A)-1
         for j in 1:length(A[i])
             if A[i][j] == 1
@@ -62,5 +62,9 @@ function SCP(C, A)
         xlist[iMin] = 1
     end
 
-    return xlist
+    for i in 1:length(xlist)
+        z = z + (xlist[i] * C[i])
+    end
+
+    return xlist, z
 end
