@@ -52,5 +52,5 @@ function SCP(C, A)
     z = sum(xlist .* C)
 
 
-    return xlist, z
+    return xlist
 end

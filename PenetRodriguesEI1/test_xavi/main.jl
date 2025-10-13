@@ -20,8 +20,8 @@ println("\n=== Chargement de l'instance SPP ===")
 
 # Loading a SPP instance
 println("\nLoading...")
-#fname = "PenetRodriguesEI1/dat/pb_1000rnd0300.dat"
-fname = "PenetRodriguesEI1/dat/didactic.dat"
+fname = "PenetRodriguesEI1/dat/pb_1000rnd0300.dat"
+#fname = "Data/didactic.dat"
 
 C, A = loadSPP(fname)
 
@@ -45,14 +45,6 @@ println("Nombre d'éléments (lignes)    = ", size(A, 1))
 using Printf
 using Random
 
-# --- (optionnel mais recommandé) reproductibilité & warm-up ----
-Random.seed!(1234)              # même tirages pour shuffle
-# warm-up pour éviter le coût de compilation dans les mesures
-begin
-    x_wu = SCP(C, A)
-    _    = ameliorationSPP_rapide(C, A, x_wu; essais_in=10)
-end
-
 # ===================== Phase 1 : Construction =====================
 t_construct = @elapsed begin
     x_init = SCP(C, A)
@@ -66,9 +58,9 @@ println("Phase 1 : Construction gloutonne")
 
 # ===================== Phase 2 : Amélioration =====================
 t_improve = @elapsed begin
-    x_best = ameliorationSPP_rapide(C, A, x_init; essais_in=10)
+    x_best, z1 = amelioration(C, A, x_init)
 end
-z1   = sum(C .* x_best) |> float
+#z1   = sum(C .* x_best)
 gain = z1 - z0
 
 println("→ Phase 2 : Amélioration locale rapide")
