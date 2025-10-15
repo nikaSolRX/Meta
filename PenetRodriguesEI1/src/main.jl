@@ -69,7 +69,7 @@ println("→ Phase 2 : Amélioration locale rapide")
 @printf("  Temps amélioration = %.3f s\n\n", t_improve)
 
 # ===================== Résumé (affichage double) ==================
-println("✅ Résumé de l’exécution :")
+println(" Résumé de l’exécution :")
 @printf("  ẑ₀ = %.1f   →   ẑ₁ = %.1f\n", z0, z1)
 @printf("  Gain total : %.1f\n", gain)
 @printf("  Temps total : %.2f s\n", t_construct + t_improve)
