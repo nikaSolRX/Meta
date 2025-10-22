@@ -1,56 +1,32 @@
 function SCP(C, A)
-    n, m = size(A)
-    LengthC = length(C)
-    U = zeros(Float64, LengthC)
-    Ia = zeros(Int, LengthC)
-    xlist = zeros(Int, LengthC)
-    couvert = falses(size(A, 1))
-    z = 0
-    
-    for i in 1:n
-        for j in 1:m
-            if A[i, j] == 1
-                Ia[j] += 1
-            end
-        end
-    end
-    for k in 1:length(Ia)
-        U[k] = C[k] / Ia[k]
+    n = length(C)
+    m = size(A, 1)
+
+    x = zeros(Int, n)
+    couverture = zeros(Int, m)             # nb de colonnes actives couvrant chaque ligne
+
+    tailles = vec(sum(A; dims = 1))               # nombre de 1 par colonne
+    scores = similar(C, Float64)
+    for j in eachindex(C)
+        t = tailles[j]
+        scores[j] = t == 0 ? -Inf : C[j] / t     # exclure colonnes vides en leur donnant -Inf
     end
 
+    # sélection greedy : à chaque étape, prendre la colonne restante de score maximal
+    remaining = collect(1:n)
+    while !isempty(remaining)
+        sub_scores = scores[remaining]
+        pos = argmax(sub_scores)           # position dans 'remaining'
+        j = remaining[pos]                 # index réel de la colonne choisie
 
-
-    while any(.!couvert)
-        for p in 1:LengthC
-            if Ia[p] > 0
-                U[p] = C[p] / Ia[p]
-            else
-                U[p] = Inf
-            end
+        colj = @view A[:, j]
+        if all(couverture .+ colj .<= 1)   # test de faisabilité
+            x[j] = 1
+            couverture .+= colj
         end
 
-        uMin, iMin = findmin(U)
-        if uMin == Inf
-            break
-        end
-        xlist[iMin] = 1
-
-        for l in 1:n
-            if A[l, iMin] == 1 && !couvert[l]
-                couvert[l] = true
-                for o in 1:m
-                    if A[l, o] == 1
-                        Ia[o] -= 1
-                    end
-                end
-            end
-        end
-
-        U[iMin] = Inf
+        deleteat!(remaining, pos)          # retirer j des candidats restants
     end
 
-    z = sum(xlist .* C)
-
-
-    return xlist
+    return x
 end
