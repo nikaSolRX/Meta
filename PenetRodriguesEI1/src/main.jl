@@ -47,9 +47,12 @@ using Random
 
 # ===================== Phase 1 : Construction =====================
 t_construct = @elapsed begin
-    x_init = SCP(C, A)
+    x_init = GRASP_C(C, A)
 end
-z0 = sum(C .* x_init) |> float
+println("X_INIT : ")
+println(x_init)
+
+z0 = sum(C[x_init])
 
 println()
 println("Phase 1 : Construction gloutonne")
