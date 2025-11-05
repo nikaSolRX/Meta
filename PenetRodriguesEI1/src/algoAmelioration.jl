@@ -1,53 +1,103 @@
-using Random
+# Recherche locale simple pour Set Packing Problem
 
-function amelioration(C, A, x)
-    # maximise sum(C .* x) sous contraintes A * x .<= 1 (set packing)
-    z = sum(x .* C)
-    nvars = length(x)
+function is_feasible(A, chosen)
+    # vérifie qu'aucune ligne n'est couverte plus d'une fois
     m = size(A, 1)
+    covered = zeros(Int, m)
+    for j in chosen
+        for i in 1:m
+            if A[i,j] == 1
+                covered[i] += 1
+                if covered[i] > 1
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
 
-    # couverture par ligne (entièrement vectorisée)
-    row_sums = A * x
-
+function local_search_1exchange(C, A, chosen_init; max_iter=1000, verbose=true)
+    m, n = size(A)
+    current = copy(chosen_init)
+    current_val = sum(C[j] for j in current)
+    
+    if verbose
+        println("\n=== Recherche locale 1-exchange ===")
+        println("Solution initiale : ", current, " val=", current_val)
+    end
+    
+    iter = 0
     improved = true
-    while improved
+    
+    while improved && iter < max_iter
+        iter += 1
         improved = false
-
-        ones_idx = findall(x .== 1)
-        zeros_idx = findall(x .== 0)
-
-        best_delta = 0.0
-        best_i = 0
-        best_j = 0
-
-        # tester tous les échanges 1->0 / 0->1
-        for i in ones_idx
-            Ai = view(A, :, i)
-            for j in zeros_idx
-                Aj = view(A, :, j)
-                # test de faisabilité rapide : row_sums - Ai + Aj <= 1
-                if all((row_sums .- Ai .+ Aj) .<= 1)
-                    delta = C[j] - C[i]   # gain si on retire i et ajoute j
-                    if delta > best_delta
-                        best_delta = delta
-                        best_i = i
-                        best_j = j
+        best_move = nothing
+        best_val = current_val
+        
+        # 1) Essayer de remplacer chaque variable choisie par une autre
+        for (idx, old_var) in enumerate(current)
+            for new_var in 1:n
+                if new_var in current
+                    continue
+                end
+                
+                # créer candidat en remplaçant old_var par new_var
+                candidate = copy(current)
+                candidate[idx] = new_var
+                
+                if is_feasible(A, candidate)
+                    val = sum(C[j] for j in candidate)
+                    if val > best_val
+                        best_val = val
+                        best_move = (:exchange, idx, old_var, new_var)
+                        improved = true
                     end
                 end
             end
         end
-
-        # appliquer la meilleure amélioration trouvée (si positive)
-        if best_delta > 0
-            x[best_i] = 0
-            x[best_j] = 1
-            z += best_delta
-            # mise à jour incrémentale de row_sums
-            row_sums .-= A[:, best_i]
-            row_sums .+= A[:, best_j]
-            improved = true
+        
+        # 2) Essayer d'ajouter une variable admissible
+        for new_var in 1:n
+            if new_var in current
+                continue
+            end
+            
+            candidate = vcat(current, new_var)
+            if is_feasible(A, candidate)
+                val = sum(C[j] for j in candidate)
+                if val > best_val
+                    best_val = val
+                    best_move = (:add, new_var)
+                    improved = true
+                end
+            end
+        end
+        
+        # Appliquer le meilleur mouvement trouvé
+        if improved
+            if best_move[1] == :exchange
+                _, idx, old_var, new_var = best_move
+                current[idx] = new_var
+                if verbose
+                    println("Iter $iter: EXCHANGE x$old_var → x$new_var, val: $current_val → $best_val")
+                end
+            elseif best_move[1] == :add
+                _, new_var = best_move
+                push!(current, new_var)
+                if verbose
+                    println("Iter $iter: ADD x$new_var, val: $current_val → $best_val")
+                end
+            end
+            current_val = best_val
         end
     end
-
-    return x, z
+    
+    if verbose
+        println("\nOptimum local atteint après $iter itérations")
+        println("Solution finale : ", current, " val=", current_val)
+    end
+    
+    return current, current_val
 end
