@@ -47,15 +47,46 @@ function return_voisinage(C, A, solution)
     return voisins
 end
 
+function return_mid_voisinage(C,A,solution)
+    m, n = size(A)
+    voisins = Vector{Vector{Int}}()
+    chosen_set = Set(solution)
+
+    # Calcul initial de la couverture
+    covered = sum(A[:, j] for j in solution)
+
+    for (pos, old_var) in enumerate(solution)
+        if pos > length(solution) ÷ 2
+            break
+        end
+        for new_var in 1:n
+            if new_var in chosen_set
+                continue
+            end
+
+            # Mise à jour incrémentale de la couverture
+            covered_new = covered .- A[:, old_var] .+ A[:, new_var]
+
+            # Test rapide de faisabilité
+            if all(covered_new .<= 1)
+                candidate = copy(solution)
+                candidate[pos] = new_var
+                push!(voisins, candidate)
+            end
+        end
+    end
+    return voisins
+end
+
 
 # Trouve la meilleure solution dans le voisinage, en excluant les mouvements tabous
 function best_sol(L, C, x_curr::Vector{Int}, tabou_move::Vector{Tuple{Symbol, Int, Int}})
-    if isempty(L)
-        return Vector{Int}(), 0.0, nothing
-    end
     best = nothing
     best_val = -Inf
     best_move = nothing
+    if isempty(L)
+        return best, best_val, best_move
+    end
     for sol in L
         val = sum(C[j] for j in sol)
         removed = setdiff(x_curr, sol)
@@ -76,22 +107,27 @@ function best_sol(L, C, x_curr::Vector{Int}, tabou_move::Vector{Tuple{Symbol, In
 end
 
 # Met à jour la mémoire tabou en respectant la taille limite
-function update_memory(mem::Vector{Tuple{Symbol, Int, Int}}, move, taille)
-    push!(mem, move)
-    if length(mem) > taille
-        popfirst!(mem)  # Supprime le plus ancien élément
+function update_memory(mem::Vector{Tuple{Tuple{Symbol, Int, Int}, Int}}, move, taille)
+    # Ajouter le mouvement avec un compteur initial (par exemple, taille_tabou)
+    if move !== nothing
+        push!(mem, (move, taille))  # Le mouvement est ajouté avec son temps restant
     end
+
+    # Réduire le compteur de chaque élément
+    mem = [(m, t - 1) for (m, t) in mem if t > 1]  # Supprime les éléments dont le temps est écoulé
+
     return mem
 end
 
-function tabou_upgrade(C, A, chosen_init, taille_tabou=7; max_iter=100)
+function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter)
 
     start_time = time()
     x_n = copy(chosen_init)
     x_fin = copy(x_n)
     z_n = sum(C[j] for j in x_n)
     z_fin = z_n
-    memory = Vector{Tuple{Symbol, Int, Int}}()  # Liste pour la mémoire tabou
+    memory = Vector{Tuple{Tuple{Symbol, Int, Int}, Int}}()  # Liste pour la mémoire tabou avec compteur    
+    z_n_history = Float64[]
     iter = 0
 
     # Liste pour stocker l'évolution de z_fin
@@ -99,21 +135,25 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou=7; max_iter=100)
 
     while iter < max_iter
         println("Itération : ", iter)
+        #L = return_voisinage(C, A, x_n)
         L = return_voisinage(C, A, x_n)
-        new_x, new_z, move = best_sol(L, C, x_n, memory)
-        if new_x === nothing
-            break
+        println("Voisins : ",L)
+        new_x, new_z, move = best_sol(L, C, x_n, [m[1] for m in memory])
+        if move !== nothing
+            if new_z > z_fin
+                x_fin = copy(new_x)
+                z_fin = new_z
+            end
+            x_n = copy(new_x)
+            z_n = new_z
+
+            # Enregistrer la valeur de z_fin
+            push!(z_n_history, new_z)
+            push!(z_fin_history, z_fin)
         end
-        if new_z > z_fin
-            x_fin = copy(new_x)
-            z_fin = new_z
-        end
-        x_n = copy(new_x)
-        z_n = new_z
         memory = update_memory(memory, move, taille_tabou)
 
-        # Enregistrer la valeur de z_fin
-        push!(z_fin_history, z_fin)
+
 
         println("Tabou update")
         println("Mémoire taboue : ", memory)
@@ -124,19 +164,23 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou=7; max_iter=100)
     println("Temps d'exécution : ", elapsed_time, " secondes")
 
     # Affichage graphique de l'évolution de z_fin
-    clf()  # Efface la figure précédente
-    figure("Évolution de z_fin", figsize=(8, 6))
+    clf()
+    figure("Évolution de z_fin", figsize=(8,6))
     title("Recherche Tabou")
     xlabel("Itérations")
     ylabel("Z")
-    plot(0:(length(z_fin_history) - 1), z_fin_history, linestyle="-", marker="o", color="blue")
-    legend(["z_fin"], loc="lower right")
+
+    it = 0:(length(z_fin_history) - 1)
+
+    plot(it, z_fin_history, linestyle="-", marker="o", color="blue")
+    plot(it, z_n_history,  linestyle="--", marker="x", color="red")
+
+    legend(["z_fin (meilleur global)", "z_n (meilleur courant)"], loc="lower right")
     grid(true)
 
-    # Espacer les ticks sur l'axe des abscisses (par exemple, tous les 5)
     xticks(0:5:(length(z_fin_history) - 1))
 
-    savefig("tabou_2_result.png")
+    savefig("tabou_3_result.png")
 
     return x_fin, z_fin
 end

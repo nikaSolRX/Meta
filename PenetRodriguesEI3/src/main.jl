@@ -21,8 +21,8 @@ println("\n=== Chargement de l'instance SPP ===")
 
 # Loading a SPP instance
 println("\nLoading...")
-fname = "PenetRodriguesEI3/dat/pb_1000rnd0700.dat"
-#fname = "PenetRodriguesEI1/dat/didactic2.dat"
+#fname = "PenetRodriguesEI3/dat/pb_1000rnd0700.dat"
+fname = "PenetRodriguesEI3/dat/didactic.dat"
 
 C, A = loadSPP(fname)
 
@@ -45,7 +45,6 @@ println("Nombre d'éléments (lignes)    = ", size(A, 1))
 
 using Printf
 using Random
-
 # ===================== Phase 1 : Construction =====================
 t_construct = @elapsed begin
     x_init = SPP(C, A)
@@ -56,12 +55,20 @@ valeur = sum(C[j] for j in x_init)
 
 
 #x_up, valeur_up = local_search_1exchange(C, A, x_init)
-x_up, valeur_up = tabou_upgrade(C, A, x_init)
+n = length(x_init)
+taille_voisinage = (n * (n-1)) / 2
+l_tabou = (taille_voisinage / n)
+nb_iterations = 50
+println("\nx_init : ", x_init)
+println("taille tabou : ", l_tabou)
+println("taille voisinage : ", taille_voisinage)
+x_up, valeur_up = tabou_upgrade(C, A, x_init, l_tabou, nb_iterations)
 
 println("\nx_init : ", x_init)
 println("solution initiale : ", valeur)
-
 println("x_update tabou : ", x_up)
+println("taille tabou : ", l_tabou)
+println("taille voisinage : ", taille_voisinage)
 println("solution améliorée tabou : ", valeur_up)
 
 
