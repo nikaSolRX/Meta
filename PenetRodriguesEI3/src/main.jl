@@ -21,8 +21,8 @@ println("\n=== Chargement de l'instance SPP ===")
 
 # Loading a SPP instance
 println("\nLoading...")
-#fname = "PenetRodriguesEI3/dat/pb_1000rnd0700.dat"
-fname = "PenetRodriguesEI3/dat/didactic.dat"
+fname = "PenetRodriguesEI3/dat/pb_1000rnd0300.dat"
+#fname = "PenetRodriguesEI3/dat/didactic.dat"
 
 C, A = loadSPP(fname)
 
@@ -30,7 +30,7 @@ println("\nInstance : ", fname)
 println("Nombre d'ensembles (colonnes) = ", length(C))
 println("Nombre d'éléments (lignes)    = ", size(A, 1))
 
-@show C
+#@show C
 #@show A
 
 #xlist1 = SCP(C,A)
@@ -57,8 +57,8 @@ valeur = sum(C[j] for j in x_init)
 #x_up, valeur_up = local_search_1exchange(C, A, x_init)
 n = length(x_init)
 taille_voisinage = (n * (n-1)) / 2
-l_tabou = (taille_voisinage / n)
-nb_iterations = 50
+l_tabou = (taille_voisinage ÷ 2)
+nb_iterations = 200
 println("\nx_init : ", x_init)
 println("taille tabou : ", l_tabou)
 println("taille voisinage : ", taille_voisinage)

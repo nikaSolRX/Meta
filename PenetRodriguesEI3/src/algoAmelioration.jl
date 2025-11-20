@@ -80,22 +80,38 @@ end
 
 
 # Trouve la meilleure solution dans le voisinage, en excluant les mouvements tabous
-function best_sol(L, C, x_curr::Vector{Int}, tabou_move::Vector{Tuple{Symbol, Int, Int}})
+function best_sol(L, C, x_curr::Vector{Int}, tabou_move::Vector{Tuple{Tuple{Symbol, Int, Int}, Int}})
     best = nothing
     best_val = -Inf
     best_move = nothing
+    aspi_defaut = nothing
+    min_tabou_time = Inf  # Initialise le temps minimum pour le critère d'aspiration
+
     if isempty(L)
-        return best, best_val, best_move
+        return best, best_val, best_move, aspi_defaut
     end
+
     for sol in L
         val = sum(C[j] for j in sol)
         removed = setdiff(x_curr, sol)
         added = setdiff(sol, x_curr)
+
         if length(removed) == 1 && length(added) == 1
             move = (:swap, removed[1], added[1])
-            if move in tabou_move
+
+            # Vérifie si le mouvement est tabou
+            tabou_entry = findfirst(x -> x[1] == move, tabou_move)
+            if tabou_entry !== nothing
+                # Si le mouvement est tabou, vérifie son temps restant
+                tabou_time = tabou_move[tabou_entry][2]
+                if tabou_time < min_tabou_time
+                    min_tabou_time = tabou_time
+                    aspi_defaut = move  # Met à jour le mouvement "le moins tabou"
+                end
                 continue
             end
+
+            # Si le mouvement n'est pas tabou, évalue normalement
             if val > best_val
                 best_val = val
                 best = copy(sol)
@@ -103,7 +119,8 @@ function best_sol(L, C, x_curr::Vector{Int}, tabou_move::Vector{Tuple{Symbol, In
             end
         end
     end
-    return best, best_val, best_move
+
+    return best, best_val, best_move, aspi_defaut
 end
 
 # Met à jour la mémoire tabou en respectant la taille limite
@@ -119,6 +136,14 @@ function update_memory(mem::Vector{Tuple{Tuple{Symbol, Int, Int}, Int}}, move, t
     return mem
 end
 
+function intensify(L, medium_term_memory)
+    return sort(L, by = x -> get(medium_term_memory, x, 0), rev = true)
+end
+
+function diversify(L, long_term_memory)
+    return sort(L, by = x -> sum(get(long_term_memory, col, 0) for col in x))
+end
+
 function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter)
 
     start_time = time()
@@ -127,38 +152,68 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter)
     z_n = sum(C[j] for j in x_n)
     z_fin = z_n
     memory = Vector{Tuple{Tuple{Symbol, Int, Int}, Int}}()  # Liste pour la mémoire tabou avec compteur    
-    z_n_history = Float64[]
     iter = 0
 
     # Liste pour stocker l'évolution de z_fin
     z_fin_history = Float64[]
+    z_n_history = Float64[]
+
+    medium_term_memory = Dict{Vector{Int}, Int}()  # Mémoire à moyen terme : solutions fréquemment visitées
+    long_term_memory = Dict{Int, Int}()  # Mémoire à long terme : fréquence des colonnes utilisées      
 
     while iter < max_iter
         println("Itération : ", iter)
-        #L = return_voisinage(C, A, x_n)
+        println("meilleur z actuel : ", z_fin)
+
+        # Générer le voisinage
         L = return_voisinage(C, A, x_n)
-        println("Voisins : ",L)
-        new_x, new_z, move = best_sol(L, C, x_n, [m[1] for m in memory])
+
+        # Intensification : Favoriser les solutions fréquemment visitées
+        L = intensify(L, medium_term_memory)
+
+        # Diversification : Favoriser les colonnes peu utilisées
+        L = diversify(L, long_term_memory)
+
+        # Trouver la meilleure solution et le critère d'aspiration
+        new_x, new_z, move, aspi_defaut = best_sol(L, C, x_n, memory)
+
+        if move === nothing && aspi_defaut !== nothing
+            println("Critère d'aspiration activé : utilisation du mouvement le moins tabou.")
+            move = aspi_defaut
+            new_x = copy(x_n)
+            removed = move[2]
+            added = move[3]
+            new_x[findfirst(x -> x == removed, new_x)] = added
+            new_z = sum(C[j] for j in new_x)
+        end
+
         if move !== nothing
             if new_z > z_fin
                 x_fin = copy(new_x)
                 z_fin = new_z
             end
             x_n = copy(new_x)
-            z_n = new_z
 
-            # Enregistrer la valeur de z_fin
-            push!(z_n_history, new_z)
-            push!(z_fin_history, z_fin)
+            # Mettre à jour les mémoires
+            medium_term_memory[x_n] = get(medium_term_memory, x_n, 0) + 1
+            for col in x_n
+                long_term_memory[col] = get(long_term_memory, col, 0) + 1
+            end
         end
+
+        push!(z_n_history, new_z)
+        push!(z_fin_history, z_fin)
+
         memory = update_memory(memory, move, taille_tabou)
-
-
 
         println("Tabou update")
         println("Mémoire taboue : ", memory)
+        println("Mémoire moyen terme : ", medium_term_memory)
+        println("Mémoire long terme : ", long_term_memory)
         iter += 1
     end
+
+
 
     elapsed_time = time() - start_time
     println("Temps d'exécution : ", elapsed_time, " secondes")
