@@ -1,7 +1,17 @@
 function SPP(C, A)
+    # Vérifier les dimensions de la matrice A
     m, n = size(A)
-    covered = falses(m)                             # quelles lignes sont déjà couvertes
-    chosen = Int[]                                  # indices des variables choisies
+    if m <= 0 || n <= 0
+        error("La matrice A doit avoir des dimensions valides (m > 0, n > 0).")
+    end
+
+    # Initialiser les BitVectors
+    covered = BitVector(undef, m)  # Utilisation de BitVector pour les lignes couvertes
+    chosen = BitVector(undef, n)  # Utilisation de BitVector pour les variables choisies
+
+    # Initialiser les valeurs à false
+    fill!(covered, false)
+    fill!(chosen, false)
 
     iter = 0
     println("Début algorithme greedy (Ci / Ti recalculé)")
@@ -9,16 +19,17 @@ function SPP(C, A)
     while true
         iter += 1
         # déterminer variables admissibles (aucun 1 sur une ligne déjà couverte)
-        admissible = Bool[]
+        admissible = BitVector(undef, n)  # Utilisation de BitVector pour les variables admissibles
+        fill!(admissible, false)
         for j in 1:n
             conflict = false
             for i in 1:m
-                if A[i,j] == 1 && covered[i]
+                if A[i, j] == 1 && covered[i]
                     conflict = true
                     break
                 end
             end
-            push!(admissible, !conflict)
+            admissible[j] = !conflict
         end
 
         # pour chaque admissible, calculer Ti' sur les lignes libres et score
@@ -27,7 +38,7 @@ function SPP(C, A)
         for j in 1:n
             if admissible[j]
                 for i in 1:m
-                    if !covered[i] && A[i,j] == 1
+                    if !covered[i] && A[i, j] == 1
                         T[j] += 1
                     end
                 end
@@ -45,10 +56,10 @@ function SPP(C, A)
         end
 
         # enregistrer choix et marquer lignes couvertes
-        push!(chosen, jstar)
+        chosen[jstar] = true  # Marquer la variable choisie dans le BitVector
         for i in 1:m
-            if A[i,jstar] == 1
-                covered[i] = true
+            if A[i, jstar] == 1
+                covered[i] = true  # Marquer les lignes couvertes dans le BitVector
             end
         end
 
@@ -59,6 +70,6 @@ function SPP(C, A)
         end
     end
 
-    return chosen
+    # Retourner les indices des variables choisies
+    return findall(chosen)
 end
-

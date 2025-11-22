@@ -21,8 +21,9 @@ println("\n=== Chargement de l'instance SPP ===")
 
 # Loading a SPP instance
 println("\nLoading...")
-fname = "PenetRodriguesEI3/dat/pb_1000rnd0300.dat"
-#fname = "PenetRodriguesEI3/dat/didactic.dat"
+#fname = "PenetRodriguesEI3/dat/pb_1000rnd0300.dat"
+fname = "PenetRodriguesEI3/dat/mimi.dat"
+instance = split(fname, "/")[end]
 
 C, A = loadSPP(fname)
 
@@ -57,12 +58,13 @@ valeur = sum(C[j] for j in x_init)
 #x_up, valeur_up = local_search_1exchange(C, A, x_init)
 n = length(x_init)
 taille_voisinage = (n * (n-1)) / 2
-l_tabou = (taille_voisinage ÷ 2)
-nb_iterations = 200
+l_tabou = (taille_voisinage ÷ (n))
+nb_iterations = 300
 println("\nx_init : ", x_init)
 println("taille tabou : ", l_tabou)
 println("taille voisinage : ", taille_voisinage)
-x_up, valeur_up = tabou_upgrade(C, A, x_init, l_tabou, nb_iterations)
+x_up, valeur_up = tabou_upgrade(C, A, x_init, l_tabou, nb_iterations, instance)
+#x_up, valeur_up = tabou_upgrade_advanced(C, A, x_init, l_tabou, nb_iterations)
 
 println("\nx_init : ", x_init)
 println("solution initiale : ", valeur)
