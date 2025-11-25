@@ -1,17 +1,15 @@
-using PyPlot  # Importer PyPlot pour l'affichage graphique
+using PyPlot
+using Random
 
 # Vérifie si une solution est faisable
 function is_feasible(A, chosen::Vector{Int})
     m, n = size(A)
-    # Vérification des indices valides
     if any(j < 1 || j > n for j in chosen)
         return false
     end
-    # Vérification des doublons
     if length(unique(chosen)) != length(chosen)
         return false
     end
-    # Vérification des contraintes de Set Packing
     covered = zeros(Int, m)
     for j in chosen
         covered .+= A[:, j]
@@ -19,58 +17,52 @@ function is_feasible(A, chosen::Vector{Int})
     return all(covered .<= 1)
 end
 
-function return_voisinage(C, A, solution)
+function return_voisinage_candidate(C, A, solution, limit_size=20)
     m, n = size(A)
     voisins = Vector{Vector{Int}}()
     chosen_set = Set(solution) 
-
-    # Calcul initial de la couverture
     covered = sum(A[:, j] for j in solution)
 
-    # Générer des mouvements swap
-    for (pos, old_var) in enumerate(solution)
+    # Stratégie 1 : DROP WORST + SWAP
+    candidates_drop = sort(solution, by = j -> C[j])
+    candidates_drop = candidates_drop[1:min(length(candidates_drop), limit_size)]
+
+    for old_var in candidates_drop
+        covered_after_drop = covered .- A[:, old_var]
+        
         for new_var in 1:n
-            if new_var in chosen_set
-                continue
-            end
-
-            # Mise à jour incrémentale de la couverture
-            covered_new = covered .- A[:, old_var] .+ A[:, new_var]
-
-            # Test rapide de faisabilité
-            if all(covered_new .<= 1)
+            if new_var in chosen_set; continue; end
+            
+            if all(covered_after_drop .+ A[:, new_var] .<= 1)
                 candidate = copy(solution)
-                candidate[pos] = new_var
+                candidate[findfirst(x->x==old_var, candidate)] = new_var
                 push!(voisins, candidate)
             end
         end
     end
 
-    # Si aucun voisin n'a été généré via les swaps, générer des mouvements add
-    if isempty(voisins)
-        for new_var in 1:n
-            if new_var in chosen_set
-                continue
-            end
-
-            # Ajouter un nouvel élément
-            candidate = copy(solution)
-            push!(candidate, new_var)
-
-            # Vérifier la faisabilité
-            if is_feasible(A, candidate)
-                push!(voisins, candidate)
+    # Stratégie 2 : ADD BEST (si peu de voisins)
+    if length(voisins) < 5
+        candidates_add = [j for j in 1:n if !(j in chosen_set)]
+        sort!(candidates_add, by = j -> C[j], rev = true)
+        candidates_add = candidates_add[1:min(length(candidates_add), limit_size)]
+        
+        for new_var in candidates_add
+            for (pos, old_var) in enumerate(solution)
+                covered_new = covered .- A[:, old_var] .+ A[:, new_var]
+                if all(covered_new .<= 1)
+                    candidate = copy(solution)
+                    candidate[pos] = new_var
+                    push!(voisins, candidate)
+                end
             end
         end
     end
 
-    # Si aucun voisin n'a été généré via les swaps ou les adds, générer des mouvements remove
+    # Filet de sécurité : REMOVE
     if isempty(voisins)
         for old_var in solution
-            # Supprimer un élément existant
             candidate = filter(x -> x != old_var, solution)
-
-            # Vérifier la faisabilité
             if is_feasible(A, candidate)
                 push!(voisins, candidate)
             end
@@ -80,25 +72,29 @@ function return_voisinage(C, A, solution)
     return voisins
 end
 
-
-# Trouve la meilleure solution dans le voisinage, en excluant les mouvements tabous
-function best_sol(L, C, x_curr::Vector{Int}, tabou_move::Vector{Tuple{Symbol, Vector{Int}, Int}})
+function best_sol_diversifiee(L, C, x_curr::Vector{Int}, tabou_move, freqs::Vector{Int}, alpha::Float64, z_best::Float64)
     best = nothing
-    best_val = -Inf
+    best_val_score = -Inf
+    best_val_real = -Inf
     best_move = nothing
+    
     aspi_defaut = nothing
-    min_tabou_time = Inf  # Initialise le temps minimum pour le critère d'aspiration
+    min_tabou_time = Inf
 
     if isempty(L)
-        return best, best_val, best_move, aspi_defaut
+        return best, best_val_real, best_move, aspi_defaut
     end
 
     for sol in L
-        val = sum(C[j] for j in sol)
+        val_real = sum(C[j] for j in sol)
+        
+        # Pénalité de diversification
+        penalty = sum(freqs[j] for j in sol)
+        val_score = val_real - (alpha * penalty)
+
         removed = setdiff(x_curr, sol)
         added = setdiff(sol, x_curr)
 
-        # Identifier le type de mouvement
         if length(removed) == 1 && length(added) == 1
             move = (:swap, [removed[1], added[1]])
         elseif length(removed) == 1 && isempty(added)
@@ -109,210 +105,256 @@ function best_sol(L, C, x_curr::Vector{Int}, tabou_move::Vector{Tuple{Symbol, Ve
             continue
         end
 
-        # Vérifie si le mouvement est tabou
+        # Gestion Tabou & Aspiration
         tabou_entry = findfirst(x -> x[1] == move[1] && x[2] == move[2], tabou_move)
         if tabou_entry !== nothing
-            # Si le mouvement est tabou, vérifie son temps restant
             tabou_time = tabou_move[tabou_entry][3]
-            if tabou_time < min_tabou_time
-                min_tabou_time = tabou_time
-                aspi_defaut = move  # Met à jour le mouvement "le moins tabou"
+            
+            # ✅ ASPIRATION PAR QUALITÉ : Si le mouvement améliore z_best, on l'autorise
+            if val_real > z_best
+                println("   ⭐ Aspiration par qualité : $val_real > $z_best")
+                # On n'exécute PAS continue, donc le mouvement sera considéré
+            else
+                # Sinon, on garde le mouvement pour aspiration par défaut
+                if tabou_time < min_tabou_time
+                    min_tabou_time = tabou_time
+                    aspi_defaut = move
+                end
+                continue  # On rejette le mouvement tabou
             end
-            continue
         end
 
-        # Si le mouvement n'est pas tabou, évalue normalement
-        if val > best_val
-            best_val = val
+        # Sélection basée sur le SCORE
+        if val_score > best_val_score
+            best_val_score = val_score
+            best_val_real = val_real
             best = copy(sol)
             best_move = move
         end
     end
 
-    return best, best_val, best_move, aspi_defaut
+    return best, best_val_real, best_move, aspi_defaut
 end
 
-# Met à jour la mémoire tabou en respectant la taille limite
 function update_memory(mem::Vector{Tuple{Symbol, Vector{Int}, Int}}, move, taille)
-    # Ajouter le mouvement avec un compteur initial (par exemple, taille_tabou)
     if move !== nothing
-        push!(mem, (move[1], move[2], taille))  # Le mouvement est ajouté avec son temps restant
+        push!(mem, (move[1], move[2], taille))
     end
-
-    # Réduire le compteur de chaque élément
-    mem = [(m, indices, t - 1) for (m, indices, t) in mem if t > 1]  # Supprime les éléments dont le temps est écoulé
-
+    mem = [(m, indices, t - 1) for (m, indices, t) in mem if t > 1]
     return mem
 end
 
-function intensify(medium_term_memory, C, A)
-    println("Intensification activée...")
-    # Vérifier si la mémoire à moyen terme est vide
-    if isempty(medium_term_memory)
-        println("Mémoire à moyen terme vide, impossible d'intensifier.")
-        return []
-    end
-
-    # Identifier la solution la plus prometteuse (fréquemment visitée)
-    best_solution, _ = findmax(medium_term_memory)  # Trouve la clé avec la valeur maximale
-
-    # Vérifier que la solution intensifiée est bien un vecteur
-    if !(best_solution isa Vector{Int})
-        println("Erreur : La solution intensifiée n'est pas un vecteur.")
-        return []
-    end
-
-    println("Solution intensifiée : ", best_solution)
-
-    # Générer un voisinage étendu autour de cette solution
-    voisins = return_voisinage(C, A, best_solution)
-    return voisins
-end
-
-function diversify(long_term_memory, C, A, n)
-    println("Diversification activée...")
-
-    # Vérifier si la mémoire à long terme est vide
-    if isempty(long_term_memory)
-        println("Mémoire à long terme vide, impossible de diversifier.")
-        return []
-    end
-
-    # Identifier les colonnes les moins utilisées
-    sorted_columns = sort(collect(keys(long_term_memory)), by = x -> get(long_term_memory, x, 0))
-
-    # Construire une nouvelle solution initiale en favorisant les colonnes peu utilisées
-    new_solution = Vector{Int}()  # Assure que new_solution est un Vector{Int}
-    for col in sorted_columns
-        if length(new_solution) >= n
-            break
+function perturb_solution(x::Vector{Int}, A, C, n_vars, strength=3)
+    x_new = copy(x)
+    
+    # Retirer 'strength' éléments aléatoires
+    for _ in 1:min(strength, length(x_new) - 1)
+        if !isempty(x_new)
+            idx = rand(1:length(x_new))
+            deleteat!(x_new, idx)
         end
-        push!(new_solution, col)
     end
-
-    # Vérifier la faisabilité de la nouvelle solution
-    if is_feasible(A, new_solution)
-        println("Nouvelle solution diversifiée : ", new_solution)
-        return new_solution
-    else
-        println("Échec de la diversification, aucune solution faisable trouvée.")
-        return []
-    end
-end
-
-function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance)
-    start_time = time()
-    x_n = copy(chosen_init)
-    x_fin = copy(x_n)
-    z_n = sum(C[j] for j in x_n)
-    z_fin = z_n
-    memory = Vector{Tuple{Symbol, Vector{Int}, Int}}()  # Liste pour la mémoire tabou avec compteur
-    medium_term_memory = Dict{Vector{Int}, Int}()  # Mémoire à moyen terme
-    long_term_memory = Dict{Int, Int}()  # Mémoire à long terme
-    iter = 0
-    stagnation_counter = 0  # Compteur de stagnation
-    stagnation_after_intensification = 0  # Compteur de stagnation après intensification
-    seuil_stagnation = 20  # Nombre d'itérations sans amélioration avant intensification
-    seuil_diversification = 5  # Nombre d'itérations sans amélioration après intensification avant diversification
-
-    # Liste pour stocker l'évolution de z_fin
-    z_fin_history = Float64[]
-    z_n_history = Float64[]
-
-    while iter < max_iter
-        println("Itération : ", iter)
-        println("meilleur z actuel : ", z_fin)
-
-        # Vérifier la stagnation
-        if stagnation_counter >= seuil_stagnation
-            voisins = intensify(medium_term_memory, C, A)
-            stagnation_counter = 0  # Réinitialiser le compteur de stagnation
-            stagnation_after_intensification += 1
-        elseif stagnation_after_intensification >= seuil_diversification
-            x_n = diversify(long_term_memory, C, A, length(x_n))
-            if isempty(x_n)
-                println("Diversification échouée, arrêt de l'algorithme.")
+    
+    # Ajouter 'strength' éléments aléatoires faisables
+    candidates = setdiff(1:n_vars, x_new)
+    shuffle!(candidates)
+    
+    for var in candidates
+        x_test = copy(x_new)
+        push!(x_test, var)
+        if is_feasible(A, x_test)
+            x_new = x_test
+            if length(x_new) >= length(x) + strength - 1
                 break
             end
-            stagnation_after_intensification = 0  # Réinitialiser le compteur après diversification
-            voisins = return_voisinage(C, A, x_n)
-        else
-            # Générer le voisinage normal
-            voisins = return_voisinage(C, A, x_n)
         end
-
-        # Trouver la meilleure solution et le critère d'aspiration
-        new_x, new_z, move, aspi_defaut = best_sol(voisins, C, x_n, memory)
-
-        if move === nothing && aspi_defaut !== nothing
-            println("Critère d'aspiration activé : utilisation du mouvement le moins tabou.")
-            move = aspi_defaut
-            new_x = copy(x_n)
-            if move[1] == :swap
-                removed = move[2][1]
-                added = move[2][2]
-                new_x[findfirst(x -> x == removed, new_x)] = added
-            elseif move[1] == :add
-                push!(new_x, move[2][1])
-            elseif move[1] == :remove
-                new_x = filter(x -> x != move[2][1], new_x)
-            end
-            new_z = sum(C[j] for j in new_x)
-        end
-
-        if move !== nothing
-            if new_z > z_fin
-                x_fin = copy(new_x)
-                z_fin = new_z
-                stagnation_counter = 0  # Réinitialiser le compteur de stagnation
-                stagnation_after_intensification = 0  # Réinitialiser le compteur après intensification
-            else
-                stagnation_counter += 1  # Incrémenter le compteur de stagnation
-            end
-            x_n = copy(new_x)
-        end
-
-        # Mettre à jour les mémoires
-        medium_term_memory[x_n] = get(medium_term_memory, x_n, 0) + 1
-        for col in x_n
-            long_term_memory[col] = get(long_term_memory, col, 0) + 1
-        end
-
-        push!(z_n_history, new_z)
-        push!(z_fin_history, z_fin)
-
-        memory = update_memory(memory, move, taille_tabou)
-
-        println("Tabou update")
-        println("Mémoire taboue : ", memory)
-        println("Mémoire moyen terme : ", medium_term_memory)
-        println("Mémoire long terme : ", long_term_memory)
-        iter += 1
     end
-
-    elapsed_time = time() - start_time
-    println("Temps d'exécution : ", elapsed_time, " secondes")
-
-    # Affichage graphique de l'évolution de z_fin
-    clf()
-    figure("Évolution de z_fin", figsize=(8,6))
-    title("Recherche Tabou")
-    xlabel("Itérations")
-    ylabel("Z")
-
-    it = 0:(length(z_fin_history) - 1)
-
-    plot(it, z_fin_history, linestyle="-", marker="o", color="blue")
-    plot(it, z_n_history,  linestyle="--", marker="x", color="red")
-
-    legend(["z_fin (meilleur global)", "z_n (meilleur courant)"], loc="lower right")
-    grid(true)
-
-    xticks(0:5:(length(z_fin_history) - 1))
-
-    savefig("results/"*nom_instance*".png")
-
-    return x_fin, z_fin
+    
+    return x_new
 end
 
-# solution mimi.dat : [1,2,6]
+function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, graph)
+    m, n = size(A)
+    start_time = time()
+    
+    # --- Initialisation ---
+    x_n = copy(chosen_init)
+    z_n = sum(C[j] for j in x_n)
+    
+    x_fin = copy(x_n)
+    z_fin = z_n
+    
+    memory = Vector{Tuple{Symbol, Vector{Int}, Int}}()
+    
+    # --- PARAMÈTRES ---
+    freqs = zeros(Int, n)
+    iter_sans_amelioration = 0
+    iter_depuis_derniere_div = 0
+    iter_depuis_derniere_int = 0
+    
+    SEUIL_DIV = 30
+    SEUIL_INT = 100
+    
+    alpha = 0.0
+    cpt_int = 0
+    cpt_div = 0
+    
+    z_fin_history = Float64[]
+    z_n_history = Float64[]
+    events_intensification = Int[]
+    events_diversification = Int[]
+    last_moves_from_best = Vector{Tuple{Symbol, Vector{Int}}}()
+    push!(z_n_history, z_n)
+    push!(z_fin_history, z_n)
+
+
+
+    iter = 0
+
+    while iter < max_iter
+        # 1. Mise à jour mémoire long terme
+        for j in x_n
+            freqs[j] += 1
+        end
+
+        # 2. Incrémentation des compteurs
+        iter_sans_amelioration += 1
+        iter_depuis_derniere_div += 1
+        iter_depuis_derniere_int += 1
+
+        # 3. Gestion DIVERSIFICATION
+        if iter_depuis_derniere_div > SEUIL_DIV
+            println(">>> DIVERSIFICATION (Iter $iter, stagnation: $iter_sans_amelioration) <<<")
+            push!(events_diversification, iter)
+            
+            alpha = 10.0 * (z_fin / max(1, n))
+            iter_depuis_derniere_div = 0
+            cpt_div += 1
+            
+        # 4. Gestion INTENSIFICATION
+        elseif iter_depuis_derniere_int > SEUIL_INT
+            println(">>> INTENSIFICATION (Iter $iter, stagnation: $iter_sans_amelioration) <<<")
+            push!(events_intensification, iter)
+            
+            x_n = perturb_solution(x_fin, A, C, n, 3)
+            z_n = sum(C[j] for j in x_n)
+            
+            if !isempty(last_moves_from_best)
+                for mv in last_moves_from_best
+                    push!(memory, (mv[1], mv[2], Int(taille_tabou * 2)))
+                end
+            end
+            
+            iter_depuis_derniere_int = 0
+            iter_depuis_derniere_div = 0
+            alpha = 0.0
+            cpt_int += 1
+            
+        # 5. Désactivation progressive de diversification
+        elseif alpha > 0.0 && iter_depuis_derniere_div > 10
+            alpha *= 0.9
+            if alpha < 0.5
+                alpha = 0.0
+                println("   🔄 Diversification désactivée")
+            end
+        end
+
+        # 6. Génération du voisinage
+        voisins = return_voisinage_candidate(C, A, x_n, 20)
+
+        # 7. Choix du mouvement (✅ AVEC z_fin comme 7ème paramètre)
+        new_x, new_z_real, move, aspi_defaut = best_sol_diversifiee(voisins, C, x_n, memory, freqs, alpha, Float64(z_fin))
+
+        # 8. Gestion Aspiration par défaut
+        if move === nothing 
+            if aspi_defaut !== nothing
+                println("   ⚠️  Aspiration par défaut")
+                move = aspi_defaut
+                new_x = copy(x_n)
+                if move[1] == :swap
+                    removed, added = move[2][1], move[2][2]
+                    new_x[findfirst(==(removed), new_x)] = added
+                elseif move[1] == :add
+                    push!(new_x, move[2][1])
+                elseif move[1] == :remove
+                    filter!(!=(move[2][1]), new_x)
+                end
+                new_z_real = sum(C[j] for j in new_x)
+            else
+                println("❌ Blocage total !")
+                break 
+            end
+        end
+
+        # 9. Mise à jour meilleure solution
+        if new_z_real > z_fin
+            x_fin = copy(new_x)
+            z_fin = new_z_real
+            iter_sans_amelioration = 0
+            empty!(last_moves_from_best)
+            println("   🎉 NOUVEAU RECORD : $z_fin (Iter $iter)")
+            
+        elseif x_n == x_fin && move !== nothing
+            push!(last_moves_from_best, (move[1], move[2]))
+            if length(last_moves_from_best) > 5
+                popfirst!(last_moves_from_best)
+            end
+        end
+        
+        x_n = copy(new_x)
+        z_n = new_z_real
+
+        # 10. Mise à jour Tabou & Historique
+        push!(z_n_history, z_n)
+        push!(z_fin_history, z_fin)
+        memory = update_memory(memory, move, Int(taille_tabou))
+
+        iter += 1
+        
+        if iter % 50 == 0 || new_z_real > z_fin
+            println("Iter $iter | Z_best: $z_fin | Z_curr: $z_n | Stag: $iter_sans_amelioration | Alpha: $(round(alpha, digits=2))")
+        end
+    end
+
+    if graph
+        # --- Affichage Graphique ---
+        # --- Affichage Graphique ---
+        clf()
+        
+        # 1. Les courbes
+        iterations = 0:(length(z_fin_history)-1)
+        plot(iterations, z_fin_history, label="Z Best", color="blue", linewidth=2)
+        plot(iterations, z_n_history, label="Z Courant", color="red", alpha=0.3)
+        
+        # 2. Lignes verticales (Intensification / Diversification)
+        for (i, idx) in enumerate(events_diversification)
+            axvline(x=idx, color="purple", linestyle="--", alpha=0.6, 
+                label=(i==1 ? "Diversification" : ""))
+        end
+        for (i, idx) in enumerate(events_intensification)
+            axvline(x=idx, color="green", linestyle="-", alpha=0.6, 
+                    label=(i==1 ? "Intensification" : ""))
+        end
+        
+        # --- AJOUT : Mise en valeur Départ et Fin ---
+        
+        # Valeurs
+        z_start = z_n_history[1]
+        z_end = z_fin
+        iter_end = length(z_fin_history)-1
+
+
+        legend()
+        xlabel("Itérations")
+        ylabel("Valeur de z(x)")
+        title("Recherche Tabou | Z_curr ZBest | $nom_instance\nStart: $(Int(z_start)) -> Best: $(Int(z_end))")
+        grid(true, alpha=0.3)
+        savefig("results/"*nom_instance*".png", dpi=150)
+    end
+
+    println("\n" * "="^60)
+    println("FIN - Z_best: $z_fin | Int: $cpt_int | Div: $cpt_div")
+    println("="^60)
+
+    return x_fin, z_fin, cpt_div, cpt_int
+end

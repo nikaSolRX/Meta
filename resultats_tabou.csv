@@ -1,0 +1,3 @@
+instance;z_init;z_best_moyen;z_best;taille_liste_tabou;nb_diversifications_moyen;nb_intensifications_moyen
+dat2\didactic.dat;30.00;30.00;30.00;1;1;0
+dat2\pb_1000rnd0300.dat;507.00;541.00;541.00;15;1;0
