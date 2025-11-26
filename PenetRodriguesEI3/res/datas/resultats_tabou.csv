@@ -1,0 +1,14 @@
+instance;z_init;z_best_moyen;z_best;taille_liste_tabou;nb_diversifications_moyen;nb_intensifications_moyen
+dat\didactic.dat;30.00;30.00;30.00;1;5;14
+dat\pb_1000rnd0300.dat;507.00;570.67;581.00;15;4;14
+dat\pb_1000rnd0700.dat;1993.00;2071.00;2076.00;74;3;14
+dat\pb_100rnd0100.dat;342.00;360.00;372.00;12;5;14
+dat\pb_100rnd0400.dat;13.00;13.67;14.00;6;5;14
+dat\pb_100rnd0700.dat;460.00;497.33;500.00;17;5;14
+dat\pb_2000rnd0800.dat;113.00;114.67;116.00;56;5;14
+dat\pb_200rnd0100.dat;351.00;411.67;416.00;12;4;14
+dat\pb_200rnd1300.dat;497.00;544.67;550.00;19;5;14
+dat\pb_500rnd0400.dat;47.00;52.00;53.00;23;4;14
+dat\pb_500rnd0900.dat;1990.00;2185.67;2202.00;72;1;14
+dat\pb_500rnd1100.dat;344.00;400.33;402.00;12;5;14
+dat\pb_500rnd1700.dat;150.00;170.00;170.00;4;4;14

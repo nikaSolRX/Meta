@@ -110,17 +110,12 @@ function best_sol_diversifiee(L, C, x_curr::Vector{Int}, tabou_move, freqs::Vect
         if tabou_entry !== nothing
             tabou_time = tabou_move[tabou_entry][3]
             
-            # ✅ ASPIRATION PAR QUALITÉ : Si le mouvement améliore z_best, on l'autorise
-            if val_real > z_best
-                println("   ⭐ Aspiration par qualité : $val_real > $z_best")
-                # On n'exécute PAS continue, donc le mouvement sera considéré
-            else
-                # Sinon, on garde le mouvement pour aspiration par défaut
+            if val_real <= z_best
                 if tabou_time < min_tabou_time
                     min_tabou_time = tabou_time
                     aspi_defaut = move
                 end
-                continue  # On rejette le mouvement tabou
+                continue 
             end
         end
 
@@ -192,8 +187,8 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, 
     iter_depuis_derniere_div = 0
     iter_depuis_derniere_int = 0
     
-    SEUIL_DIV = 30
-    SEUIL_INT = 100
+    SEUIL_DIV = 100
+    SEUIL_INT = 40
     
     alpha = 0.0
     cpt_int = 0
@@ -206,8 +201,6 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, 
     last_moves_from_best = Vector{Tuple{Symbol, Vector{Int}}}()
     push!(z_n_history, z_n)
     push!(z_fin_history, z_n)
-
-
 
     iter = 0
 
@@ -222,20 +215,20 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, 
         iter_depuis_derniere_div += 1
         iter_depuis_derniere_int += 1
 
-        # 3. Gestion DIVERSIFICATION
-        if iter_depuis_derniere_div > SEUIL_DIV
-            println(">>> DIVERSIFICATION (Iter $iter, stagnation: $iter_sans_amelioration) <<<")
-            push!(events_diversification, iter)
-            
-            alpha = 10.0 * (z_fin / max(1, n))
+        diversification_active = false
+        intensification_active = false
+        if iter_sans_amelioration > SEUIL_DIV
+            #println('DIVERSIFICATION')
+            diversification_active = true
+            alpha = 5.0 * (z_fin / max(1, n))
             iter_depuis_derniere_div = 0
+            iter_sans_amelioration = 0
             cpt_div += 1
-            
-        # 4. Gestion INTENSIFICATION
+            push!(events_diversification, iter)
+        
         elseif iter_depuis_derniere_int > SEUIL_INT
-            println(">>> INTENSIFICATION (Iter $iter, stagnation: $iter_sans_amelioration) <<<")
-            push!(events_intensification, iter)
-            
+            #println('INTENSIFICATION')
+            intensification_active = true
             x_n = perturb_solution(x_fin, A, C, n, 3)
             z_n = sum(C[j] for j in x_n)
             
@@ -246,29 +239,24 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, 
             end
             
             iter_depuis_derniere_int = 0
-            iter_depuis_derniere_div = 0
+            #iter_depuis_derniere_div = 0
             alpha = 0.0
             cpt_int += 1
+            push!(events_intensification, iter)
             
-        # 5. Désactivation progressive de diversification
         elseif alpha > 0.0 && iter_depuis_derniere_div > 10
             alpha *= 0.9
             if alpha < 0.5
                 alpha = 0.0
-                println("   🔄 Diversification désactivée")
             end
         end
 
-        # 6. Génération du voisinage
         voisins = return_voisinage_candidate(C, A, x_n, 20)
 
-        # 7. Choix du mouvement (✅ AVEC z_fin comme 7ème paramètre)
         new_x, new_z_real, move, aspi_defaut = best_sol_diversifiee(voisins, C, x_n, memory, freqs, alpha, Float64(z_fin))
 
-        # 8. Gestion Aspiration par défaut
         if move === nothing 
             if aspi_defaut !== nothing
-                println("   ⚠️  Aspiration par défaut")
                 move = aspi_defaut
                 new_x = copy(x_n)
                 if move[1] == :swap
@@ -281,19 +269,15 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, 
                 end
                 new_z_real = sum(C[j] for j in new_x)
             else
-                println("❌ Blocage total !")
                 break 
             end
         end
 
-        # 9. Mise à jour meilleure solution
         if new_z_real > z_fin
             x_fin = copy(new_x)
             z_fin = new_z_real
             iter_sans_amelioration = 0
             empty!(last_moves_from_best)
-            println("   🎉 NOUVEAU RECORD : $z_fin (Iter $iter)")
-            
         elseif x_n == x_fin && move !== nothing
             push!(last_moves_from_best, (move[1], move[2]))
             if length(last_moves_from_best) > 5
@@ -304,21 +288,22 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, 
         x_n = copy(new_x)
         z_n = new_z_real
 
-        # 10. Mise à jour Tabou & Historique
         push!(z_n_history, z_n)
         push!(z_fin_history, z_fin)
         memory = update_memory(memory, move, Int(taille_tabou))
 
         iter += 1
-        
-        if iter % 50 == 0 || new_z_real > z_fin
-            println("Iter $iter | Z_best: $z_fin | Z_curr: $z_n | Stag: $iter_sans_amelioration | Alpha: $(round(alpha, digits=2))")
-        end
+
+        println("Itération $iter | Z_curr: $z_n | Z_best: $z_fin | Alpha: $(round(alpha, digits=2)) | $(diversification_active ? "Diversification" : intensification_active ? "Intensification" : "")")
     end
 
     if graph
-        # --- Affichage Graphique ---
-        # --- Affichage Graphique ---
+        if !isdir("res")
+            mkdir("res")
+        end
+
+        safe_instance_name = replace(nom_instance, r"[^\w\d]" => "_")
+
         clf()
         
         # 1. Les courbes
@@ -336,25 +321,13 @@ function tabou_upgrade(C, A, chosen_init, taille_tabou, max_iter, nom_instance, 
                     label=(i==1 ? "Intensification" : ""))
         end
         
-        # --- AJOUT : Mise en valeur Départ et Fin ---
-        
-        # Valeurs
-        z_start = z_n_history[1]
-        z_end = z_fin
-        iter_end = length(z_fin_history)-1
-
-
         legend()
         xlabel("Itérations")
         ylabel("Valeur de z(x)")
-        title("Recherche Tabou | Z_curr ZBest | $nom_instance\nStart: $(Int(z_start)) -> Best: $(Int(z_end))")
+        title("Recherche Tabou | Z_curr ZBest | $nom_instance\nStart: $(Int(z_n_history[1])) -> Best: $(Int(z_fin))")
         grid(true, alpha=0.3)
-        savefig("results/"*nom_instance*".png", dpi=150)
+        savefig("res/graphs/" * safe_instance_name * ".png", dpi=150)
     end
-
-    println("\n" * "="^60)
-    println("FIN - Z_best: $z_fin | Int: $cpt_int | Div: $cpt_div")
-    println("="^60)
 
     return x_fin, z_fin, cpt_div, cpt_int
 end

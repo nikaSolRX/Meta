@@ -18,7 +18,7 @@ function test_instances_csv(folder_path::String)
     best_scores_global = Float64[] 
 
     # --- Initialisation du fichier CSV ---
-    csv_filename = "results/datas/resultats_tabou.csv"
+    csv_filename = "res/datas/resultats_tabou_test.csv"
     
     open(csv_filename, "w") do io
         # En-tête
@@ -41,7 +41,7 @@ function test_instances_csv(folder_path::String)
 
         # Paramètres Tabou
         l_tabou = (k ÷ 2)
-        nb_iterations = 1000
+        nb_iterations = 600
 
         # Variables pour accumuler
         sum_z_bests = 0.0
@@ -132,10 +132,9 @@ function test_instances_csv(folder_path::String)
         end
 
         tight_layout()
-        savefig("results/graphs/synthese_resultats.png")
+        savefig("res/graphs/synthese_resultats_test.png")
         println("Graphique 'synthese_resultats.png' sauvegardé.")
     end
 end
 
-# Lancement
-test_instances_csv("PenetRodriguesEI3/dat")
+#test_instances_csv("dat")
